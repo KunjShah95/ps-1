@@ -1,0 +1,7 @@
+﻿{
+  "css.customData": [],
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+  "editor.formatOnSave": true,
+  "typescript.preferences.importModuleSpecifier": "non-relative"
+}
