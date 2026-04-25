@@ -8,34 +8,27 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import {
-  collection,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  limit,
-  Timestamp,
-  collectionGroup,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { authManager } from '@/lib/auth/manager';
-import { getZoneData } from '@/lib/data-engine';
-import { generateAlerts, getZoneInsights } from '@/lib/ai-engine';
+import { getAdminDb } from '@/lib/firebase-admin';
+import { requireFirebaseUser } from '@/lib/server/requireFirebaseUser';
+import { getZoneInsights } from '@/lib/ai-engine';
+import type { ZoneData } from '@/lib/types';
 
-async function requireAuth(request: NextRequest) {
-  const header = request.headers.get('authorization');
-  if (!header) return null;
-  const token = header.replace(/^Bearer\s+/i, '');
-  return authManager.verifyToken(token);
-}
+type AlertDoc = {
+  id: string;
+  type?: string;
+  acknowledged?: boolean;
+  created_at?: unknown;
+  [key: string]: unknown;
+};
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireAuth(request);
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'viewer');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
+
+    const adminDb = getAdminDb();
 
     const { searchParams } = new URL(request.url);
     const zoneFilter = searchParams.get('zone');
@@ -49,34 +42,40 @@ export async function GET(request: NextRequest) {
       week: 7 * 24 * 60 * 60 * 1000,
     };
     const since = new Date(Date.now() - (windowMs[period] ?? windowMs.hour));
-    const sinceTs = Timestamp.fromDate(since);
+    const sinceTs = since;
 
     // --- Zone summary (current) ---
-    const zones = getZoneData();
-    const filteredZones = zoneFilter ? zones.filter((z) => z.id === zoneFilter) : zones;
+    let zones: ZoneData[] = [];
+    if (zoneFilter) {
+      const d = await adminDb.collection('zones').doc(zoneFilter).get();
+      zones = d.exists ? [{ id: d.id, ...(d.data() as Omit<ZoneData, 'id'>) }] : [];
+    } else {
+      const snap = await adminDb.collection('zones').get();
+      zones = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ZoneData, 'id'>) }));
+    }
+    const filteredZones = zones;
 
     // --- Zone history from Firestore ---
     let historyData: { zoneId: string; count: number; percentage: number; timestamp: number }[] = [];
     try {
       // collectionGroup query across all zones/{id}/history subcollections
-      let hq = query(
-        collectionGroup(db, 'history'),
-        where('timestamp', '>=', sinceTs),
-        orderBy('timestamp', 'desc'),
-        limit(pageSize),
-      );
+      const histSnap = await adminDb
+        .collectionGroup('history')
+        .where('timestamp', '>=', sinceTs)
+        .orderBy('timestamp', 'desc')
+        .limit(pageSize)
+        .get();
 
-      const histSnap = await getDocs(hq);
       historyData = histSnap.docs.map((d) => {
-        const data = d.data();
+        const data = d.data() as { count: number; percentage: number; timestamp?: FirebaseFirestore.Timestamp };
         // parent path: zones/{zoneId}/history/{docId}
         const zoneId = d.ref.parent.parent?.id ?? 'unknown';
-        const ts: Timestamp = data.timestamp;
+        const ts = data.timestamp;
         return {
           zoneId,
-          count:      data.count,
+          count: data.count,
           percentage: data.percentage,
-          timestamp:  ts?.toMillis?.() ?? Date.now(),
+          timestamp: ts?.toMillis?.() ?? Date.now(),
         };
       });
     } catch {
@@ -90,7 +89,16 @@ export async function GET(request: NextRequest) {
       ? Math.round(filteredZones.reduce((s, z) => s + z.percentage, 0) / filteredZones.length)
       : 0;
 
-    const alerts   = generateAlerts(zones);
+    const alertsSnap = await adminDb
+      .collection('alerts')
+      .where('acknowledged', '==', false)
+      .orderBy('created_at', 'desc')
+      .limit(50)
+      .get();
+    const alerts: AlertDoc[] = alertsSnap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Record<string, unknown>),
+    }));
     const insights = getZoneInsights(zones);
 
     // --- Alert distribution ---

@@ -9,39 +9,33 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import {
-  doc,
-  getDoc,
-  setDoc,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { authManager } from '@/lib/auth/manager';
-import { getZoneData, refreshZoneData } from '@/lib/data-engine';
+import { FieldValue } from 'firebase-admin/firestore';
+import { getAdminDb } from '@/lib/firebase-admin';
+import { requireFirebaseUser } from '@/lib/server/requireFirebaseUser';
 import { generateAlerts, getZoneInsights } from '@/lib/ai-engine';
-
-async function requireAuth(request: NextRequest, minRole: 'manager' | 'admin' = 'manager') {
-  const header = request.headers.get('authorization');
-  if (!header) return null;
-  const token = header.replace(/^Bearer\s+/i, '');
-  const session = await authManager.verifyToken(token);
-  if (!session || !authManager.hasPermission(session.role, [minRole])) return null;
-  return session;
-}
+import type { ZoneData } from '@/lib/types';
 
 export async function GET(request: NextRequest) {
   try {
-    const header = request.headers.get('authorization');
-    if (!header) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    const token = header.replace(/^Bearer\s+/i, '');
-    const session = await authManager.verifyToken(token);
-    if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    const user = await requireFirebaseUser(request, 'viewer');
+    if (!user) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
-    const snap = await getDoc(doc(db, 'system', 'simulation_state'));
-    const state = snap.exists() ? snap.data() : { running: false };
+    const adminDb = getAdminDb();
+    const snap = await adminDb.doc('system/simulation_state').get();
+    const state = snap.exists ? snap.data() : { running: false };
 
-    const zones    = getZoneData();
-    const alerts   = generateAlerts(zones);
+    const zonesSnap = await adminDb.collection('zones').get();
+    const zones = zonesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ZoneData, 'id'>) })) satisfies ZoneData[];
+
+    const alertsSnap = await adminDb
+      .collection('alerts')
+      .where('acknowledged', '==', false)
+      .orderBy('created_at', 'desc')
+      .limit(20)
+      .get();
+    const storedAlerts = alertsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+
+    const alerts = storedAlerts.length ? storedAlerts : generateAlerts(zones);
     const insights = getZoneInsights(zones);
 
     return NextResponse.json({
@@ -60,51 +54,60 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await requireAuth(request, 'manager');
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'manager');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized — manager+ required' }, { status: 401 });
     }
 
     const body = await request.json();
     const { action } = body;
 
-    const stateRef = doc(db, 'system', 'simulation_state');
+    const adminDb = getAdminDb();
+    const stateRef = adminDb.doc('system/simulation_state');
 
     switch (action) {
       case 'start': {
-        await setDoc(stateRef, {
+        await stateRef.set({
           running: true,
-          startedAt: serverTimestamp(),
-          startedBy: session.userId,
+          startedAt: FieldValue.serverTimestamp(),
+          startedBy: user.uid,
           intervalMs: body.intervalMs || 10000,
         }, { merge: true });
         return NextResponse.json({ success: true, message: 'Simulation started' });
       }
 
       case 'stop': {
-        await setDoc(stateRef, {
+        await stateRef.set({
           running: false,
-          stoppedAt: serverTimestamp(),
-          stoppedBy: session.userId,
+          stoppedAt: FieldValue.serverTimestamp(),
+          stoppedBy: user.uid,
         }, { merge: true });
         return NextResponse.json({ success: true, message: 'Simulation stopped' });
       }
 
       case 'reset': {
-        if (!authManager.hasPermission(session.role, ['admin'])) {
+        if (user.role !== 'admin') {
           return NextResponse.json({ success: false, error: 'Admin only' }, { status: 403 });
         }
-        await setDoc(stateRef, {
+        await stateRef.set({
           running: false,
-          resetAt: serverTimestamp(),
-          resetBy: session.userId,
+          resetAt: FieldValue.serverTimestamp(),
+          resetBy: user.uid,
         });
         return NextResponse.json({ success: true, message: 'Simulation reset' });
       }
 
       case 'snapshot': {
-        const zones    = refreshZoneData();
-        const alerts   = generateAlerts(zones);
+        const zonesSnap = await adminDb.collection('zones').get();
+        const zones = zonesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ZoneData, 'id'>) })) satisfies ZoneData[];
+        const alertsSnap = await adminDb
+          .collection('alerts')
+          .where('acknowledged', '==', false)
+          .orderBy('created_at', 'desc')
+          .limit(20)
+          .get();
+        const storedAlerts = alertsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+        const alerts = storedAlerts.length ? storedAlerts : generateAlerts(zones);
         const insights = getZoneInsights(zones);
         return NextResponse.json({
           success: true,

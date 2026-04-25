@@ -144,7 +144,7 @@ export default function PlatformPage() {
               </span>
             </h1>
             <p className="text-xl lg:text-2xl text-white/40 max-w-2xl mx-auto leading-relaxed mb-12 font-light">
-              SmartFlow gives you real-time visibility into your venue. Know what's happening, predict problems, and make smart decisions.
+              SmartFlow gives you real-time visibility into your venue. Know what&apos;s happening, predict problems, and make smart decisions.
             </p>
             <Link
               href="/auth/register"

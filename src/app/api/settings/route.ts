@@ -10,21 +10,9 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import {
-  doc,
-  getDoc,
-  setDoc,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { authManager } from '@/lib/auth/manager';
-
-async function requireAuth(request: NextRequest) {
-  const header = request.headers.get('authorization');
-  if (!header) return null;
-  const token = header.replace(/^Bearer\s+/i, '');
-  return authManager.verifyToken(token);
-}
+import { FieldValue } from 'firebase-admin/firestore';
+import { getAdminDb } from '@/lib/firebase-admin';
+import { requireFirebaseUser } from '@/lib/server/requireFirebaseUser';
 
 const DEFAULT_VENUE_SETTINGS = {
   venueName: 'SmartFlow Venue',
@@ -51,27 +39,29 @@ const DEFAULT_VENUE_SETTINGS = {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireAuth(request);
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'viewer');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
     const scope = searchParams.get('scope') || 'venue'; // venue | user
 
+    const adminDb = getAdminDb();
+
     if (scope === 'user') {
-      const ref = doc(db, 'settings', 'users', session.userId, 'prefs');
-      const snap = await getDoc(ref);
+      const ref = adminDb.doc(`settings/users/${user.uid}/prefs`);
+      const snap = await ref.get();
       return NextResponse.json({
         success: true,
-        settings: snap.exists() ? snap.data() : {},
+        settings: snap.exists ? snap.data() : {},
       });
     }
 
     // Venue-level settings (all authenticated users can read)
-    const ref = doc(db, 'settings', 'venue');
-    const snap = await getDoc(ref);
-    const settings = snap.exists() ? snap.data() : DEFAULT_VENUE_SETTINGS;
+    const ref = adminDb.doc('settings/venue');
+    const snap = await ref.get();
+    const settings = snap.exists ? snap.data() : DEFAULT_VENUE_SETTINGS;
 
     return NextResponse.json({ success: true, settings });
   } catch (error) {
@@ -84,30 +74,31 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await requireAuth(request);
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'viewer');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await request.json();
     const scope = body.scope || 'venue';
 
+    const adminDb = getAdminDb();
+
     if (scope === 'user') {
       // Any user can update their own preferences
-      const ref = doc(db, 'settings', 'users', session.userId, 'prefs');
-      await setDoc(ref, { ...body.settings, updated_at: serverTimestamp() }, { merge: true });
+      const ref = adminDb.doc(`settings/users/${user.uid}/prefs`);
+      await ref.set({ ...body.settings, updated_at: FieldValue.serverTimestamp() }, { merge: true });
       return NextResponse.json({ success: true });
     }
 
     // Venue settings — manager+ only
-    if (!authManager.hasPermission(session.role, ['manager'])) {
+    if (!['manager', 'admin'].includes(user.role)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const ref = doc(db, 'settings', 'venue');
-    await setDoc(
-      ref,
-      { ...body.settings, updatedBy: session.userId, updated_at: serverTimestamp() },
+    const ref = adminDb.doc('settings/venue');
+    await ref.set(
+      { ...body.settings, updatedBy: user.uid, updated_at: FieldValue.serverTimestamp() },
       { merge: true },
     );
 

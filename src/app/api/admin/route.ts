@@ -7,32 +7,41 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getZoneData, refreshZoneData } from '@/lib/data-engine';
-import { generateAlerts, getZoneInsights } from '@/lib/ai-engine';
-import { authManager } from '@/lib/auth/manager';
+import { getZoneInsights } from '@/lib/ai-engine';
 import { getStatus } from '@/lib/types';
+import { requireFirebaseUser } from '@/lib/server/requireFirebaseUser';
+import { getAdminDb } from '@/lib/firebase-admin';
+import type { ZoneData } from '@/lib/types';
 
-async function requireAuth(request: NextRequest) {
-  const header = request.headers.get('authorization');
-  if (!header) return null;
-  const token = header.replace(/^Bearer\s+/i, '');
-  const session = await authManager.verifyToken(token);
-  if (!session || !authManager.hasPermission(session.role, ['manager'])) return null;
-  return session;
-}
+type AlertDoc = {
+  id: string;
+  type?: string;
+  acknowledged?: boolean;
+  created_at?: unknown;
+  [key: string]: unknown;
+};
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireAuth(request);
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'manager');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized — manager+ required' }, { status: 401 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const doRefresh = searchParams.get('refresh') === 'true';
+    const adminDb = getAdminDb();
+    const zonesSnap = await adminDb.collection('zones').get();
+    const zones = zonesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ZoneData, 'id'>) })) satisfies ZoneData[];
 
-    const zones    = doRefresh ? refreshZoneData() : getZoneData();
-    const alerts   = generateAlerts(zones);
+    const alertsSnap = await adminDb
+      .collection('alerts')
+      .where('acknowledged', '==', false)
+      .orderBy('created_at', 'desc')
+      .limit(50)
+      .get();
+    const alerts: AlertDoc[] = alertsSnap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Record<string, unknown>),
+    }));
     const insights = getZoneInsights(zones);
     const memory   = process.memoryUsage();
 

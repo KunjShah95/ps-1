@@ -10,8 +10,10 @@ import type { NextRequest } from 'next/server';
  *   /api/docs     — OpenAPI docs (future)
  *
  * Protected routes require Authorization: Bearer <token>
- * The actual role check happens inside each route handler via authManager.
- * Middleware just ensures a token is present before forwarding.
+ *
+ * NOTE: Middleware runs in the Edge runtime, so it MUST NOT use the Firebase Admin SDK.
+ * Token verification + role checks happen inside each route handler via `requireFirebaseUser()`.
+ * Middleware only ensures the header is present to reduce accidental unauthenticated calls.
  */
 
 const PUBLIC_API_PREFIXES = [
@@ -44,10 +46,7 @@ export function middleware(request: NextRequest) {
     );
   }
 
-  // Forward the token via a custom header so route handlers can re-use it
-  const response = NextResponse.next();
-  response.headers.set('X-Auth-Token', token);
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {

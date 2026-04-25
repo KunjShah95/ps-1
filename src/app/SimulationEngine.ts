@@ -135,7 +135,8 @@ export function useSimulation() {
     const alertsQuery = query(
       collection(db, 'alerts'), 
       where('acknowledged', '==', false),
-      limit(20)
+      orderBy('created_at', 'desc'),
+      limit(5)
     );
 
     const unsubscribeAlerts = onSnapshot(alertsQuery, (snapshot) => {

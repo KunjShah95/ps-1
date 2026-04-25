@@ -35,7 +35,7 @@ export function generateZoneData(config: SimulationConfig = DEFAULT_CONFIG): Zon
     let count = Math.floor(zone.capacity * (baseLoad + variance));
     count = Math.max(0, Math.min(count, Math.floor(zone.capacity * 0.95)));
     
-    const percentage = Math.round((count / zone.capacity) * 100);
+    const percentage = zone.capacity > 0 ? Math.round((count / zone.capacity) * 100) : 0;
     const waitTime = calculateWaitTime(count, zone.serviceRate);
     
     return {

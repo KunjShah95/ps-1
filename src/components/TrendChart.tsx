@@ -52,7 +52,7 @@ export function TrendChart({ zoneId, zoneName }: TrendChartProps) {
 
   if (isLoading && history.length === 0) {
     return (
-      <div className="h-64 flex items-center justify-center glass border-white/5 rounded-3xl animate-pulse">
+      <div className="h-32 flex items-center justify-center glass border-white/5 rounded-3xl animate-pulse">
         <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/20">Syncing History...</span>
       </div>
     );
@@ -62,7 +62,7 @@ export function TrendChart({ zoneId, zoneName }: TrendChartProps) {
     <motion.div 
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="glass border-white/5 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden group"
+      className="glass border-white/5 rounded-3xl p-5 shadow-2xl relative overflow-hidden group"
     >
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -75,7 +75,7 @@ export function TrendChart({ zoneId, zoneName }: TrendChartProps) {
         </div>
       </div>
 
-      <div className="h-64 w-full">
+      <div className="h-32 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData}>
             <defs>

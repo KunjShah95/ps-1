@@ -1,8 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ShieldAlert, Radio, Phone, Users, CheckCircle2, Zap, Volume2, XCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { apiFetch } from "@/lib/client/api";
+import { CommandHeader, CommandPage, EyebrowPill, Panel } from "@/components/command-center";
+
+type CrisisIncident = {
+  id: string;
+  title?: string;
+  description?: string;
+  type?: string;
+  severity?: string;
+  status?: string;
+  created_at?: unknown;
+};
 
 const CRISIS_SCENARIOS = [
   { id: "stampede", name: "Stampede Risk", level: 5, description: "Critical crowd density approaching stampede threshold", color: "red" },
@@ -26,18 +38,67 @@ const CARD_STYLE: Record<string, string> = {
 };
 
 export default function CrisisPage() {
-  const [activeCrisis, setActiveCrisis] = useState<string | null>(null);
+  const [activeCrisisId, setActiveCrisisId] = useState<string | null>(null);
   const [sirensActive, setSirensActive] = useState(false);
   const [broadcastMsg, setBroadcastMsg] = useState("");
   const [broadcastSent, setBroadcastSent] = useState(false);
+  const [incidents, setIncidents] = useState<CrisisIncident[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const triggerCrisis = (id: string) => {
-    if (!activeCrisis) setActiveCrisis(id);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await apiFetch<{ incidents: CrisisIncident[] }>("/api/crisis?status=active&limit=20");
+        if (!alive) return;
+        const list = res.incidents ?? [];
+        setIncidents(list);
+        setActiveCrisisId(list[0]?.id ?? null);
+      } catch {
+        if (!alive) return;
+        setIncidents([]);
+        setActiveCrisisId(null);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const triggerCrisis = async (scenarioId: string) => {
+    const scenario = CRISIS_SCENARIOS.find((s) => s.id === scenarioId);
+    if (!scenario) return;
+    const res = await apiFetch<{ id: string }>("/api/crisis", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "create",
+        title: scenario.name,
+        description: scenario.description,
+        type: scenario.id,
+        severity: scenario.level >= 5 ? "critical" : scenario.level >= 4 ? "high" : "medium",
+      }),
+    });
+    const id = res?.id;
+    if (id) {
+      setActiveCrisisId(id);
+      const refreshed = await apiFetch<{ incidents: CrisisIncident[] }>("/api/crisis?status=active&limit=20");
+      setIncidents(refreshed.incidents ?? []);
+    }
   };
 
-  const resolveCrisis = () => {
-    setActiveCrisis(null);
+  const resolveCrisis = async () => {
+    if (!activeCrisisId) return;
+    await apiFetch("/api/crisis", {
+      method: "POST",
+      body: JSON.stringify({ action: "resolve", id: activeCrisisId, resolution: "Resolved via dashboard" }),
+    });
     setSirensActive(false);
+    const refreshed = await apiFetch<{ incidents: CrisisIncident[] }>("/api/crisis?status=active&limit=20");
+    setIncidents(refreshed.incidents ?? []);
+    setActiveCrisisId((refreshed.incidents ?? [])[0]?.id ?? null);
   };
 
   const sendBroadcast = () => {
@@ -48,42 +109,50 @@ export default function CrisisPage() {
     }
   };
 
-  const activeScenario = CRISIS_SCENARIOS.find((s) => s.id === activeCrisis);
+  const activeIncident = useMemo(() => incidents.find((i) => i.id === activeCrisisId) ?? null, [incidents, activeCrisisId]);
+  const activeScenario = CRISIS_SCENARIOS.find((s) => s.id === (activeIncident?.type ?? activeCrisisId));
 
   return (
-    <div className="p-6 lg:p-12">
-      <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-16">
-        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
-          <div className="flex items-center gap-2 mb-3">
-            <div className={`w-2 h-2 rounded-full animate-pulse ${activeCrisis ? "bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.8)]" : "bg-emerald-500"}`} />
-            <span className={`text-[10px] font-black uppercase tracking-[0.3em] ${activeCrisis ? "text-red-500" : "text-emerald-500"}`}>
-              {activeCrisis ? "Crisis Active — Response Required" : "Standby Mode"}
-            </span>
-          </div>
-          <h1 className="text-4xl font-bold tracking-tighter mb-2">Crisis Management</h1>
-          <p className="text-white/40 text-sm font-medium">Emergency response protocols and incident triggers.</p>
-        </motion.div>
-
-        <div className="flex items-center gap-3">
-          <button onClick={() => setSirensActive(!sirensActive)}
-            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all border ${sirensActive ? "bg-red-500/20 border-red-500/40 text-red-400 animate-pulse" : "bg-white/[0.02] border-white/5 text-white/40 hover:border-white/15"}`}>
-            <Volume2 className={`w-4 h-4 ${sirensActive ? "animate-pulse" : ""}`} />
-            Sirens: {sirensActive ? "ON" : "OFF"}
-          </button>
-          {activeCrisis && (
-            <button onClick={resolveCrisis}
-              className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-600/20">
-              <CheckCircle2 className="w-4 h-4" />Resolve Crisis
+    <CommandPage>
+      <CommandHeader
+        eyebrow={
+          <EyebrowPill dotClassName={activeCrisisId ? "bg-red-500" : "bg-emerald-500"}>
+            {activeCrisisId ? "Crisis active — response required" : "Standby mode"}
+          </EyebrowPill>
+        }
+        title="Crisis Management"
+        subtitle="Emergency response protocols and incident triggers."
+        right={
+          <>
+            <button
+              onClick={() => setSirensActive(!sirensActive)}
+              className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                sirensActive
+                  ? "bg-red-500/15 border-red-500/30 text-red-200"
+                  : "bg-white/[0.03] border-white/10 text-white/60 hover:bg-white/[0.05]"
+              }`}
+            >
+              <Volume2 className={`h-4 w-4 ${sirensActive ? "animate-pulse" : ""}`} />
+              Sirens: {sirensActive ? "On" : "Off"}
             </button>
-          )}
-        </div>
-      </header>
+            {activeCrisisId ? (
+              <button
+                onClick={resolveCrisis}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white hover:bg-emerald-400 transition-colors"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Resolve
+              </button>
+            ) : null}
+          </>
+        }
+      />
 
       {/* Active Crisis Banner */}
       <AnimatePresence>
-        {activeCrisis && activeScenario && (
+        {activeCrisisId && activeScenario && (
           <motion.div key="crisis-banner" initial={{ opacity: 0, scale: 0.95, y: -20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-red-500/10 border-2 border-red-500/40 rounded-[2rem] p-8 mb-12 relative overflow-hidden">
+            className="mb-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
             <div className="absolute inset-0 bg-gradient-to-r from-red-500/5 to-transparent pointer-events-none" />
             <div className="flex items-center gap-6 mb-6 relative z-10">
               <div className="p-4 bg-red-500/20 rounded-2xl border border-red-500/30">
@@ -114,11 +183,7 @@ export default function CrisisPage() {
       </AnimatePresence>
 
       {/* Broadcast */}
-      <div className="mb-6 flex items-center gap-4">
-        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/20">01 — Emergency Broadcast</h2>
-        <div className="h-px flex-1 bg-white/5" />
-      </div>
-      <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem] mb-12 backdrop-blur-sm">
+      <Panel title="Emergency Broadcast">
         <p className="text-white/40 text-sm font-medium mb-6">Broadcast a message to all venue PA systems and staff devices.</p>
         <div className="flex gap-4">
           <div className="relative flex-1">
@@ -130,20 +195,18 @@ export default function CrisisPage() {
             {broadcastSent ? "Sent!" : "Broadcast"}
           </button>
         </div>
-      </div>
+      </Panel>
 
       {/* Crisis Scenarios */}
-      <div className="mb-6 flex items-center gap-4">
-        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/20">02 — Scenario Triggers</h2>
-        <div className="h-px flex-1 bg-white/5" />
-      </div>
+      <div className="mt-6" />
+      <Panel title="Scenario Triggers">
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mb-12">
         {CRISIS_SCENARIOS.map((s, i) => (
           <motion.button key={s.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
-            onClick={() => triggerCrisis(s.id)} disabled={!!activeCrisis && activeCrisis !== s.id} whileHover={!activeCrisis ? { scale: 1.02 } : {}} whileTap={!activeCrisis ? { scale: 0.98 } : {}}
-            className={`p-6 bg-white/[0.02] border rounded-[2rem] text-left transition-all backdrop-blur-sm ${
-              activeCrisis === s.id ? "border-red-500/50 bg-red-500/10" : CARD_STYLE[s.color]
-            } ${activeCrisis && activeCrisis !== s.id ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}>
+            onClick={() => triggerCrisis(s.id)} disabled={false} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+            className={`p-6 glass border-white/10 rounded-[2rem] text-left transition-all backdrop-blur-sm ${
+              activeScenario?.id === s.id ? "border-red-500/50 bg-red-500/10" : CARD_STYLE[s.color]
+            } cursor-pointer`}>
             <div className="flex items-center justify-between mb-4">
               <div className={`p-3 rounded-xl border ${LEVEL_STYLE[s.level]} w-fit`}>
                 <AlertTriangle className="w-4 h-4" />
@@ -154,7 +217,7 @@ export default function CrisisPage() {
             </div>
             <h3 className="font-bold text-base mb-2 tracking-tight">{s.name}</h3>
             <p className="text-white/40 text-sm leading-relaxed">{s.description}</p>
-            {activeCrisis === s.id && (
+            {activeScenario?.id === s.id && (
               <div className="flex items-center gap-2 mt-4 text-red-400">
                 <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                 <span className="text-[10px] font-black uppercase tracking-widest">Active</span>
@@ -162,13 +225,16 @@ export default function CrisisPage() {
             )}
           </motion.button>
         ))}
+        {loading && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="md:col-span-2 xl:col-span-3 p-10 glass border-white/5 rounded-[2rem] text-center text-white/30">
+            Syncing active incidents…
+          </motion.div>
+        )}
       </div>
+      </Panel>
 
       {/* Quick Actions */}
-      <div className="mb-6 flex items-center gap-4">
-        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/20">03 — Quick Actions</h2>
-        <div className="h-px flex-1 bg-white/5" />
-      </div>
+      <Panel title="Quick Actions" className="mt-6">
       <div className="grid md:grid-cols-4 gap-4">
         {[
           { icon: <Zap className="w-5 h-5" />, label: "Start Evacuation", accent: "hover:border-red-500/40 hover:bg-red-500/5 hover:text-red-400" },
@@ -176,12 +242,13 @@ export default function CrisisPage() {
           { icon: <Users className="w-5 h-5" />, label: "Call All Staff", accent: "hover:border-blue-500/40 hover:bg-blue-500/5 hover:text-blue-400" },
           { icon: <XCircle className="w-5 h-5" />, label: "Clear All Alerts", accent: "hover:border-emerald-500/40 hover:bg-emerald-500/5 hover:text-emerald-400" },
         ].map((a) => (
-          <button key={a.label} className={`flex flex-col items-center gap-3 p-6 bg-white/[0.02] border border-white/5 rounded-[2rem] transition-all text-white/40 ${a.accent}`}>
+          <button key={a.label} className={`flex flex-col items-center gap-3 p-6 glass border-white/10 rounded-[2rem] transition-all text-white/40 ${a.accent}`}>
             {a.icon}
             <span className="text-[10px] font-black uppercase tracking-widest">{a.label}</span>
           </button>
         ))}
       </div>
-    </div>
+      </Panel>
+    </CommandPage>
   );
 }

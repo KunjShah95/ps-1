@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 import { useSimulation } from "@/app/SimulationEngine";
-import { Users, Clock, AlertTriangle, Activity, BarChart3, TrendingUp, TrendingDown, ArrowUpRight, RefreshCw } from "lucide-react";
+import {
+  CommandHeader,
+  CommandPage,
+  EyebrowPill,
+  MetricCard,
+  MetricsStrip,
+  Panel,
+} from "@/components/command-center";
+import { Activity, AlertTriangle, BarChart3, Clock, RefreshCw, TrendingDown, TrendingUp, Users } from "lucide-react";
 import { motion } from "framer-motion";
 
 const TIME_RANGES = ["1h", "6h", "24h", "7d"];
@@ -27,171 +35,182 @@ export default function AnalyticsPage() {
   const sortedZones = [...zones].sort((a, b) => b.percentage - a.percentage);
 
   return (
-    <div className="p-6 lg:p-12">
-      <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-16">
-        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_12px_rgba(16,185,129,0.8)]" />
-            <span className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.3em]">Live Data Stream</span>
-          </div>
-          <h1 className="text-4xl font-bold tracking-tighter mb-2">Live Analytics</h1>
-          <p className="text-white/40 text-sm font-medium">Historical data and AI-powered predictive insights.</p>
-        </motion.div>
-        <div className="flex items-center gap-2 bg-white/[0.02] border border-white/5 rounded-2xl p-1.5">
-          {TIME_RANGES.map((r) => (
-            <button key={r} onClick={() => setTimeRange(r)}
-              className={`px-5 py-2.5 rounded-xl text-sm font-black uppercase tracking-widest transition-all ${timeRange === r ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" : "text-white/30 hover:text-white/60"}`}>
-              {r}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      <div className="mb-6 flex items-center gap-4">
-        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/20">01 — Core Metrics</h2>
-        <div className="h-px flex-1 bg-white/5" />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-16">
-        {[
-          { icon: <Users className="w-5 h-5 text-blue-400" />, label: "Total Occupancy", value: insights?.totalPeople?.toLocaleString() ?? "0", trend: "+12.4%", up: true, sub: "People tracked across all zones" },
-          { icon: <Clock className="w-5 h-5 text-purple-400" />, label: "Avg Wait Time", value: `${insights?.averageWaitTime ?? 0}m`, trend: "-2m", up: true, sub: "Mean queue processing time" },
-          { icon: <AlertTriangle className="w-5 h-5 text-amber-400" />, label: "Critical Zones", value: String(insights?.criticalZones ?? 0), trend: insights?.criticalZones ? "Elevated" : "Nominal", up: !insights?.criticalZones, sub: "Zones above 85% saturation" },
-          { icon: <Activity className="w-5 h-5 text-emerald-400" />, label: "Throughput Rate", value: `${insights?.throughputRate ?? 0}%`, trend: "+5.2%", up: true, sub: "Real-time flow efficiency" },
-        ].map((m, i) => (
-          <motion.div key={m.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }} whileHover={{ y: -5 }}
-            className="p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem] hover:border-white/15 transition-all group relative overflow-hidden shadow-xl backdrop-blur-sm">
-            <div className="flex items-center justify-between mb-8">
-              <div className="p-4 bg-white/5 rounded-[1.25rem] group-hover:scale-110 transition-all duration-500 ring-1 ring-white/10">{m.icon}</div>
-              <div className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest border ${m.up ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
-                {m.up ? <TrendingUp className="w-3 h-3 inline mr-1" /> : <TrendingDown className="w-3 h-3 inline mr-1" />}{m.trend}
-              </div>
-            </div>
-            <p className="text-white/20 text-[10px] font-black uppercase tracking-[0.3em] mb-2">{m.label}</p>
-            <p className="text-4xl font-bold tracking-tighter mb-2">{m.value}</p>
-            <p className="text-[10px] text-white/30 font-medium italic">{m.sub}</p>
-          </motion.div>
-        ))}
-      </div>
-
-      <div className="mb-6 flex items-center gap-4">
-        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/20">02 — Zone Performance</h2>
-        <div className="h-px flex-1 bg-white/5" />
-      </div>
-
-      <div className="grid xl:grid-cols-2 gap-8 mb-16">
-        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-          className="p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem] backdrop-blur-sm">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h3 className="font-bold text-lg tracking-tight">Zone Saturation</h3>
-              <p className="text-white/30 text-xs font-medium mt-1">Real-time density across all sectors</p>
-            </div>
-            <BarChart3 className="w-5 h-5 text-white/20" />
-          </div>
-          <div className="space-y-6">
-            {sortedZones.slice(0, 6).map((zone, i) => (
-              <div key={zone.id}>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-bold text-white/70">{zone.name}</span>
-                  <span className={`text-sm font-black tabular-nums ${STATUS_TEXT[zone.status]}`}>{zone.percentage}%</span>
-                </div>
-                <div className="h-2.5 bg-white/[0.03] rounded-full overflow-hidden border border-white/5">
-                  <motion.div initial={{ width: 0 }} animate={{ width: `${zone.percentage}%` }} transition={{ duration: 1, delay: i * 0.08, ease: "circOut" }}
-                    className={`h-full rounded-full bg-gradient-to-r ${STATUS_GRADIENT[zone.status]}`} />
-                </div>
-              </div>
+    <CommandPage>
+      <CommandHeader
+        eyebrow={<EyebrowPill>Live data stream</EyebrowPill>}
+        title="Live Analytics"
+        subtitle="Historical metrics and predictive insights."
+        right={
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1">
+            {TIME_RANGES.map((r) => (
+              <button
+                key={r}
+                onClick={() => setTimeRange(r)}
+                className={`rounded-lg px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                  timeRange === r ? "bg-blue-500 text-white" : "text-white/55 hover:text-white/75"
+                }`}
+              >
+                {r}
+              </button>
             ))}
           </div>
-        </motion.div>
+        }
+      />
 
-        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}
-          className="p-8 bg-white/[0.02] border border-white/5 rounded-[2.5rem] backdrop-blur-sm">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h3 className="font-bold text-lg tracking-tight">AI Predictions</h3>
-              <p className="text-white/30 text-xs font-medium mt-1">30-minute lookahead forecast</p>
-            </div>
-            <div className="flex items-center gap-1.5 bg-blue-500/10 px-3 py-1.5 rounded-xl border border-blue-500/20">
-              <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
-              <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Live</span>
-            </div>
-          </div>
-          <div className="space-y-4">
-            {sortedZones.slice(0, 5).map((zone, i) => {
-              const predicted = Math.min(100, zone.percentage + 8);
-              const delta = predicted - zone.percentage;
-              return (
-                <motion.div key={zone.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
-                  className="flex items-center gap-4 p-4 bg-white/[0.02] rounded-2xl border border-white/5 hover:border-white/10 transition-all group">
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center mb-1">
-                      <h4 className="text-sm font-bold text-white/80">{zone.name}</h4>
-                      <span className={`text-xs font-black flex items-center gap-1 ${delta > 5 ? "text-red-400" : "text-emerald-400"}`}>
-                        {delta > 5 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}+{delta}%
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-white/30 font-medium">
-                      Now: <span className="text-white/60 font-bold">{zone.percentage}%</span>{"  →  "}30min: <span className="text-white/60 font-bold">{predicted}%</span>
-                    </p>
+      <div className="space-y-6">
+        <Panel title="Core Metrics">
+          <MetricsStrip>
+            <MetricCard
+              label="Total Occupancy"
+              value={insights?.totalPeople?.toLocaleString() ?? "0"}
+              hint={
+                <span className="inline-flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5" /> Live
+                </span>
+              }
+              accent="blue"
+            />
+            <MetricCard
+              label="Avg Wait Time"
+              value={`${insights?.averageWaitTime ?? 0}m`}
+              hint={
+                <span className="inline-flex items-center gap-2">
+                  <Clock className="h-3.5 w-3.5" /> Rolling
+                </span>
+              }
+              accent="neutral"
+            />
+            <MetricCard
+              label="Critical Zones"
+              value={String(insights?.criticalZones ?? 0)}
+              hint={insights?.criticalZones ? "Elevated" : "Nominal"}
+              accent={insights?.criticalZones ? "red" : "neutral"}
+            />
+            <MetricCard
+              label="Throughput Rate"
+              value={`${insights?.throughputRate ?? 0}%`}
+              hint={
+                <span className="inline-flex items-center gap-2">
+                  <Activity className="h-3.5 w-3.5" /> Live
+                </span>
+              }
+              accent="emerald"
+            />
+          </MetricsStrip>
+        </Panel>
+
+        <div className="grid gap-6 xl:grid-cols-2">
+          <Panel title="Zone Saturation" right={<BarChart3 className="h-4 w-4 text-white/35" />}>
+            <div className="space-y-5">
+              {sortedZones.slice(0, 6).map((zone, i) => (
+                <div key={zone.id}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-white/80">{zone.name}</span>
+                    <span className={`text-sm font-semibold tabular-nums ${STATUS_TEXT[zone.status]}`}>{zone.percentage}%</span>
                   </div>
-                  <ArrowUpRight className="w-4 h-4 text-white/10 group-hover:text-blue-400 transition-colors" />
-                </motion.div>
-              );
-            })}
-          </div>
-        </motion.div>
-      </div>
-
-      <div className="mb-6 flex items-center gap-4">
-        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/20">03 — Full Data Table</h2>
-        <div className="h-px flex-1 bg-white/5" />
-        <button className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-blue-500 hover:text-blue-400 transition-colors group">
-          <RefreshCw className="w-3 h-3 group-hover:rotate-180 transition-transform duration-500" />Refresh
-        </button>
-      </div>
-
-      <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-        className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] overflow-hidden backdrop-blur-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-white/5">
-                {["Zone", "Occupancy", "Capacity", "Saturation", "Wait Time", "Status"].map((h) => (
-                  <th key={h} className="text-left py-5 px-6 text-[10px] font-black uppercase tracking-[0.2em] text-white/20">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {zones.map((zone, i) => (
-                <tr key={zone.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
-                  <td className="py-4 px-6 font-bold text-sm">{zone.name}</td>
-                  <td className="py-4 px-6 text-sm text-white/60 tabular-nums">{zone.count.toLocaleString()}</td>
-                  <td className="py-4 px-6 text-sm text-white/60 tabular-nums">{zone.capacity.toLocaleString()}</td>
-                  <td className="py-4 px-6">
-                    <div className="flex items-center gap-3">
-                      <div className="w-20 h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <div className={`h-full bg-gradient-to-r ${STATUS_GRADIENT[zone.status]} rounded-full`} style={{ width: `${zone.percentage}%` }} />
-                      </div>
-                      <span className={`text-sm font-bold tabular-nums ${STATUS_TEXT[zone.status]}`}>{zone.percentage}%</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-6 text-sm text-white/60 tabular-nums">{zone.waitTime}m</td>
-                  <td className="py-4 px-6">
-                    <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border ${
-                      zone.status === "low" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                      zone.status === "medium" ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" :
-                      zone.status === "high" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
-                      "bg-red-500/10 text-red-400 border-red-500/20"}`}>
-                      {zone.status}
-                    </span>
-                  </td>
-                </tr>
+                  <div className="mt-2 h-2 rounded-full border border-white/10 bg-white/[0.04] overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${zone.percentage}%` }}
+                      transition={{ duration: 1, delay: i * 0.05, ease: "circOut" }}
+                      className={`h-full bg-gradient-to-r ${STATUS_GRADIENT[zone.status]}`}
+                    />
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </Panel>
+
+          <Panel title="Predictions" right={<span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">30m</span>}>
+            <div className="space-y-3">
+              {sortedZones.slice(0, 5).map((zone, i) => {
+                const predicted = Math.min(100, zone.percentage + 8);
+                const delta = predicted - zone.percentage;
+                const up = delta > 5;
+                return (
+                  <motion.div
+                    key={zone.id}
+                    initial={{ opacity: 0, x: 12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.06 }}
+                    className="rounded-2xl border border-white/10 bg-white/[0.02] p-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-white/80">{zone.name}</div>
+                        <div className="mt-1 text-xs text-white/45">
+                          Now <span className="text-white/70 font-semibold">{zone.percentage}%</span> → 30m{" "}
+                          <span className="text-white/70 font-semibold">{predicted}%</span>
+                        </div>
+                      </div>
+                      <div className={`shrink-0 inline-flex items-center gap-1 text-xs font-semibold ${up ? "text-red-300" : "text-emerald-300"}`}>
+                        {up ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}+{delta}%
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </Panel>
         </div>
-      </motion.div>
-    </div>
+
+        <Panel
+          title="Full Data Table"
+          right={
+            <button className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/60 hover:bg-white/[0.05] transition-colors">
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </button>
+          }
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-white/10">
+                  {["Zone", "Occupancy", "Capacity", "Saturation", "Wait Time", "Status"].map((h) => (
+                    <th key={h} className="py-3 pr-6 text-left text-[10px] font-semibold uppercase tracking-[0.22em] text-white/45">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {zones.map((zone) => (
+                  <tr key={zone.id} className="border-b border-white/[0.06]">
+                    <td className="py-3 pr-6 text-sm font-semibold text-white/80">{zone.name}</td>
+                    <td className="py-3 pr-6 text-sm text-white/55 tabular-nums">{zone.count.toLocaleString()}</td>
+                    <td className="py-3 pr-6 text-sm text-white/55 tabular-nums">{zone.capacity.toLocaleString()}</td>
+                    <td className="py-3 pr-6">
+                      <div className="flex items-center gap-3">
+                        <div className="h-1.5 w-24 rounded-full border border-white/10 bg-white/[0.04] overflow-hidden">
+                          <div className={`h-full bg-gradient-to-r ${STATUS_GRADIENT[zone.status]}`} style={{ width: `${zone.percentage}%` }} />
+                        </div>
+                        <span className={`text-sm font-semibold tabular-nums ${STATUS_TEXT[zone.status]}`}>{zone.percentage}%</span>
+                      </div>
+                    </td>
+                    <td className="py-3 pr-6 text-sm text-white/55 tabular-nums">{zone.waitTime}m</td>
+                    <td className="py-3 pr-6">
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+                          zone.status === "low"
+                            ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                            : zone.status === "medium"
+                              ? "bg-blue-500/10 text-blue-300 border-blue-500/20"
+                              : zone.status === "high"
+                                ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                                : "bg-red-500/10 text-red-300 border-red-500/20"
+                        }`}
+                      >
+                        {zone.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      </div>
+    </CommandPage>
   );
 }

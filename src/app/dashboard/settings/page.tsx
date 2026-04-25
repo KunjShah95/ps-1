@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Settings, Bell, Shield, Globe, Database, Save, Key, CheckCircle2, Zap, Link, Wifi } from "lucide-react";
 import { motion } from "framer-motion";
+import { apiFetch } from "@/lib/client/api";
+import { CommandHeader, CommandPage, EyebrowPill, Panel } from "@/components/command-center";
 
 const TABS = [
   { id: "general", label: "General", icon: Settings },
@@ -57,26 +59,58 @@ export default function SettingsPage() {
     liveMode: true,
   });
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiFetch<{ settings: unknown }>("/api/settings?scope=user");
+        if (!alive) return;
+        const s = (res.settings && typeof res.settings === "object") ? (res.settings as Record<string, unknown>) : {};
+        setToggles((prev) => ({
+          ...prev,
+          criticalAlerts: typeof s.criticalAlerts === "boolean" ? s.criticalAlerts : prev.criticalAlerts,
+          highAlerts: typeof s.highAlerts === "boolean" ? s.highAlerts : prev.highAlerts,
+          warningAlerts: typeof s.warningAlerts === "boolean" ? s.warningAlerts : prev.warningAlerts,
+          emailNotifs: typeof s.emailNotifs === "boolean" ? s.emailNotifs : prev.emailNotifs,
+          smsNotifs: typeof s.smsNotifs === "boolean" ? s.smsNotifs : prev.smsNotifs,
+          twoFactor: typeof s.twoFactor === "boolean" ? s.twoFactor : prev.twoFactor,
+          autoRefresh: typeof s.autoRefresh === "boolean" ? s.autoRefresh : prev.autoRefresh,
+          darkMode: typeof s.darkMode === "boolean" ? s.darkMode : prev.darkMode,
+          liveMode: typeof s.liveMode === "boolean" ? s.liveMode : prev.liveMode,
+        }));
+      } catch {
+        // ignore - stays on defaults
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const toggle = (key: keyof typeof toggles) => setToggles((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  const handleSave = async () => {
+    try {
+      await apiFetch("/api/settings", {
+        method: "POST",
+        body: JSON.stringify({ scope: "user", settings: toggles }),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch {
+      // no-op for now
+    }
   };
 
   return (
-    <div className="p-6 lg:p-12">
-      <header className="mb-16">
-        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-2 h-2 bg-blue-500 rounded-full" />
-            <span className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em]">System Configuration</span>
-          </div>
-          <h1 className="text-4xl font-bold tracking-tighter mb-2">Settings</h1>
-          <p className="text-white/40 text-sm font-medium">Configure system preferences, alerts, and integrations.</p>
-        </motion.div>
-      </header>
+    <CommandPage>
+      <CommandHeader
+        eyebrow={<EyebrowPill>System configuration</EyebrowPill>}
+        title="Settings"
+        subtitle="Preferences, alerts, and integrations."
+      />
 
+      <Panel title="Configuration">
       <div className="flex flex-col xl:flex-row gap-8">
         {/* Sidebar tabs */}
         <nav className="xl:w-56 flex xl:flex-col gap-1 overflow-x-auto xl:overflow-x-visible pb-2 xl:pb-0 shrink-0">
@@ -85,7 +119,11 @@ export default function SettingsPage() {
             const isActive = activeTab === tab.id;
             return (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-3 px-5 py-4 rounded-2xl transition-all text-left whitespace-nowrap group relative ${isActive ? "bg-white/5 text-white border border-white/10" : "text-white/30 hover:bg-white/[0.03] hover:text-white/60"}`}>
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left whitespace-nowrap group relative border ${
+                  isActive
+                    ? "bg-white/[0.05] text-white border-white/15"
+                    : "bg-white/[0.02] text-white/55 border-white/10 hover:bg-white/[0.04] hover:text-white/75"
+                }`}>
                 {isActive && <motion.div layoutId="settings-indicator" className="absolute left-0 w-1 h-8 bg-blue-500 rounded-r-full" />}
                 <Icon className={`w-4 h-4 ${isActive ? "text-blue-400" : ""}`} />
                 <span className="text-sm font-bold tracking-tight">{tab.label}</span>
@@ -216,6 +254,7 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
-    </div>
+      </Panel>
+    </CommandPage>
   );
 }

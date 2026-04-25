@@ -10,40 +10,16 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  query,
-  where,
-  orderBy,
-  limit,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { authManager } from '@/lib/auth/manager';
-
-async function requireAuth(
-  request: NextRequest,
-  minRole: 'viewer' | 'staff' | 'security' | 'manager' | 'admin' = 'security',
-) {
-  const header = request.headers.get('authorization');
-  if (!header) return null;
-  const token = header.replace(/^Bearer\s+/i, '');
-  const session = await authManager.verifyToken(token);
-  if (!session || !authManager.hasPermission(session.role, [minRole])) return null;
-  return session;
-}
+import { FieldValue } from 'firebase-admin/firestore';
+import { getAdminDb } from '@/lib/firebase-admin';
+import { requireFirebaseUser } from '@/lib/server/requireFirebaseUser';
 
 // ── GET ──────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireAuth(request, 'security');
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'viewer');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -52,29 +28,27 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status'); // active | resolved | all
     const pageSize = Math.min(Number(searchParams.get('limit') || 20), 100);
 
+    const adminDb = getAdminDb();
+
     // Single incident
     if (id) {
-      const snap = await getDoc(doc(db, 'crisis_incidents', id));
-      if (!snap.exists()) {
+      const snap = await adminDb.collection('crisis_incidents').doc(id).get();
+      if (!snap.exists) {
         return NextResponse.json({ success: false, error: 'Incident not found' }, { status: 404 });
       }
       return NextResponse.json({ success: true, incident: { id: snap.id, ...snap.data() } });
     }
 
     // List with optional status filter
-    let q = query(
-      collection(db, 'crisis_incidents'),
-      orderBy('created_at', 'desc'),
-      limit(pageSize),
-    );
+    let q: FirebaseFirestore.Query = adminDb
+      .collection('crisis_incidents')
+      .orderBy('created_at', 'desc')
+      .limit(pageSize);
 
-    if (status && status !== 'all') {
-      q = query(q, where('status', '==', status));
-    } else if (!status) {
-      q = query(q, where('status', '==', 'active'));
-    }
+    if (status && status !== 'all') q = q.where('status', '==', status);
+    else if (!status) q = q.where('status', '==', 'active');
 
-    const snap = await getDocs(q);
+    const snap = await q.get();
     const incidents = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     return NextResponse.json({
@@ -96,13 +70,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action } = body;
 
+    const adminDb = getAdminDb();
+
     if (action === 'create') {
-      const session = await requireAuth(request, 'manager');
-      if (!session) {
+      const user = await requireFirebaseUser(request, 'manager');
+      if (!user) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
       }
 
-      const ref = await addDoc(collection(db, 'crisis_incidents'), {
+      const ref = await adminDb.collection('crisis_incidents').add({
         title:       body.title,
         description: body.description || '',
         type:        body.type || 'general',       // overcrowding | stampede | fire | medical | security | general
@@ -110,13 +86,13 @@ export async function POST(request: NextRequest) {
         status:      'active',
         affectedZones: body.affectedZones || [],
         assignedTo:  body.assignedTo || [],
-        createdBy:   session.userId,
-        created_at:  serverTimestamp(),
-        updated_at:  serverTimestamp(),
+        createdBy:   user.uid,
+        created_at:  FieldValue.serverTimestamp(),
+        updated_at:  FieldValue.serverTimestamp(),
         timeline: [
           {
             timestamp: Date.now(),
-            actor: session.userId,
+            actor: user.uid,
             action: 'created',
             note: 'Incident created',
           },
@@ -127,66 +103,72 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'update') {
-      const session = await requireAuth(request, 'security');
-      if (!session) {
+      const user = await requireFirebaseUser(request, 'security');
+      if (!user) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
       }
 
-      const ref = doc(db, 'crisis_incidents', body.id);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
+      const ref = adminDb.collection('crisis_incidents').doc(body.id);
+      const snap = await ref.get();
+      if (!snap.exists) {
         return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
       }
 
-      const existingTimeline: unknown[] = (snap.data().timeline as unknown[]) || [];
+      const data = snap.data() ?? {};
+      const existingTimeline: unknown[] = Array.isArray((data as { timeline?: unknown }).timeline)
+        ? (((data as { timeline?: unknown }).timeline) as unknown[])
+        : [];
 
-      await updateDoc(ref, {
+      await ref.set({
         ...body.updates,
-        updated_at: serverTimestamp(),
+        updated_at: FieldValue.serverTimestamp(),
         timeline: [
           ...existingTimeline,
           {
             timestamp: Date.now(),
-            actor: session.userId,
+            actor: user.uid,
             action: 'updated',
             note: body.note || 'Incident updated',
           },
         ],
-      });
+      }, { merge: true });
 
       return NextResponse.json({ success: true });
     }
 
     if (action === 'resolve') {
-      const session = await requireAuth(request, 'manager');
-      if (!session) {
+      const user = await requireFirebaseUser(request, 'manager');
+      if (!user) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
       }
 
-      const ref = doc(db, 'crisis_incidents', body.id);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
+      const ref = adminDb.collection('crisis_incidents').doc(body.id);
+      const snap = await ref.get();
+      if (!snap.exists) {
         return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
       }
 
-      const existingTimeline: unknown[] = (snap.data().timeline as unknown[]) || [];
+      const data = snap.data() ?? {};
+      const existingTimeline: unknown[] = Array.isArray((data as { timeline?: unknown }).timeline)
+        ? (((data as { timeline?: unknown }).timeline) as unknown[])
+        : [];
 
-      await updateDoc(ref, {
+      await ref.set({
         status:      'resolved',
-        resolvedBy:  session.userId,
-        resolved_at: serverTimestamp(),
-        updated_at:  serverTimestamp(),
+        resolvedBy:  user.uid,
+        resolved_at: FieldValue.serverTimestamp(),
+        updated_at:  FieldValue.serverTimestamp(),
         resolution:  body.resolution || '',
         timeline: [
           ...existingTimeline,
           {
             timestamp: Date.now(),
-            actor: session.userId,
+            actor: user.uid,
             action: 'resolved',
             note: body.resolution || 'Incident resolved',
           },
         ],
-      });
+      }, { merge: true });
 
       return NextResponse.json({ success: true });
     }

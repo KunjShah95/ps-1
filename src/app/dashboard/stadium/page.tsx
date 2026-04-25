@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSimulation } from "@/app/SimulationEngine";
 import { motion, AnimatePresence } from "framer-motion";
+import { CommandHeader, CommandPage, EyebrowPill, Panel } from "@/components/command-center";
 import {
   Maximize2, RefreshCw, AlertTriangle, Users, Wind, Zap,
   Eye, Radio, Camera, Thermometer, Navigation, ChevronRight,
@@ -10,11 +11,11 @@ import {
 } from "lucide-react";
 
 const ZONES: Record<string, { x: number; y: number; w: number; h: number; label: string; capacity: number }> = {
-  z1: { x: 180, y: 60,  w: 240, h: 75, label: "North Stand",    capacity: 8200 },
-  z2: { x: 180, y: 465, w: 240, h: 75, label: "South Stand",    capacity: 7800 },
-  z3: { x: 25,  y: 155, w: 85,  h: 290, label: "West Stand",   capacity: 6500 },
-  z4: { x: 490, y: 155, w: 85,  h: 290, label: "East Stand",   capacity: 6500 },
-  z5: { x: 195, y: 155, w: 210, h: 290, label: "Pitch / Field", capacity: 0   },
+  "north-stand": { x: 180, y: 60,  w: 240, h: 75, label: "North Stand",    capacity: 8200 },
+  "south-stand": { x: 180, y: 465, w: 240, h: 75, label: "South Stand",    capacity: 7800 },
+  "west-stand":  { x: 25,  y: 155, w: 85,  h: 290, label: "West Stand",   capacity: 6500 },
+  "east-stand":  { x: 490, y: 155, w: 85,  h: 290, label: "East Stand",   capacity: 6500 },
+  "pitch":       { x: 195, y: 155, w: 210, h: 290, label: "Pitch / Field", capacity: 0   },
 };
 
 const GATES = [
@@ -60,7 +61,7 @@ export default function StadiumPage() {
     return () => clearInterval(t);
   }, []);
 
-  const mapped = zones.slice(0, 4).map((z, i) => ({ ...z, key: `z${i + 1}` }));
+  const mapped = zones.filter(z => ZONES[z.id]).map(z => ({ ...z, key: z.id }));
   const totalCrowd  = mapped.reduce((a, z) => a + z.count, 0);
   const avgSat      = mapped.length ? Math.round(mapped.reduce((a, z) => a + z.percentage, 0) / mapped.length) : 0;
   const critCount   = mapped.filter(z => z.status === "critical").length;
@@ -75,45 +76,42 @@ export default function StadiumPage() {
   ];
 
   return (
-    <div className="p-6 lg:p-10 min-h-screen">
-      {/* Header */}
-      <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-10">
-        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
-          <div className="flex items-center gap-2 mb-2">
-            <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-            <span className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.3em]">Live Stadium Feed</span>
-          </div>
-          <h1 className="text-4xl font-bold tracking-tighter mb-1">Stadium View</h1>
-          <p className="text-white/40 text-sm font-medium">
-            Bird's-eye crowd density overlay · <span className="text-white/60">{zones.length}</span> zones synchronized
-          </p>
-        </motion.div>
-
-        <div className="flex items-center gap-3 flex-wrap">
+    <CommandPage>
+      <CommandHeader
+        eyebrow={<EyebrowPill>Live stadium feed</EyebrowPill>}
+        title="Stadium View"
+        subtitle={
+          <>
+            Bird&apos;s-eye overlay · <span className="text-white/70">{zones.length}</span> zones synchronized
+          </>
+        }
+        right={
+          <div className="flex items-center gap-2 flex-wrap">
           {(["heat","flow","capacity"] as const).map(m => (
             <button
               key={m}
               onClick={() => setViewMode(m)}
-              className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all border ${
+              className={`px-4 py-2 rounded-xl text-[10px] font-semibold uppercase tracking-[0.18em] transition-colors border ${
                 viewMode === m
-                  ? "bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20"
-                  : "bg-white/[0.02] border-white/10 text-white/30 hover:text-white/60"
+                  ? "bg-blue-500 border-blue-500/40 text-white"
+                  : "bg-white/[0.03] border-white/10 text-white/55 hover:bg-white/[0.05]"
               }`}
             >{m}</button>
           ))}
           <button
             onClick={() => setShowCams(c => !c)}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all border flex items-center gap-2 ${
-              showCams ? "bg-white/5 border-white/20 text-white/80" : "bg-white/[0.02] border-white/10 text-white/30"
+            className={`px-4 py-2 rounded-xl text-[10px] font-semibold uppercase tracking-[0.18em] transition-colors border flex items-center gap-2 ${
+              showCams ? "bg-white/[0.06] border-white/15 text-white/80" : "bg-white/[0.03] border-white/10 text-white/55"
             }`}
           >
             <Camera className="w-3.5 h-3.5" /> Cameras
           </button>
-          <button className="p-2.5 bg-white/[0.02] border border-white/10 rounded-xl hover:bg-white/[0.05] transition-all">
+          <button className="p-2.5 bg-white/[0.03] border border-white/10 rounded-xl hover:bg-white/[0.05] transition-colors">
             <RefreshCw className="w-4 h-4 text-white/30" />
           </button>
-        </div>
-      </header>
+          </div>
+        }
+      />
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
@@ -131,12 +129,14 @@ export default function StadiumPage() {
         ))}
       </div>
 
+      <div className="mt-6" />
+
       {/* Main grid */}
       <div className="grid xl:grid-cols-12 gap-8">
 
         {/* SVG Stadium */}
-        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
-          className="xl:col-span-8 bg-white/[0.015] border border-white/5 rounded-[2.5rem] overflow-hidden shadow-2xl backdrop-blur-sm relative">
+        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="xl:col-span-8">
+          <Panel title="Stadium Overlay" className="overflow-hidden">
 
           {/* Legend */}
           <div className="absolute top-5 left-6 flex items-center gap-3 z-10 flex-wrap">
@@ -174,7 +174,7 @@ export default function StadiumPage() {
             {/* Zone heat overlays */}
             {mapped.map(zone => {
               const pos = ZONES[zone.key];
-              if (!pos || zone.key === "z5") return null;
+              if (!pos || zone.key === "pitch") return null;
               const sel = selected === zone.key;
               const fill = statusColor(zone.status, viewMode === "capacity" ? 0.65 : 0.42);
               const hex  = statusHex(zone.status);
@@ -225,6 +225,31 @@ export default function StadiumPage() {
                       <line x1={a.x1} y1={a.y1} x2={a.x2-ux*hl} y2={a.y2-uy*hl}
                         stroke={a.color} strokeWidth="2.5" strokeDasharray="6 3" />
                       <polygon points={`${tip.x},${tip.y} ${b1.x},${b1.y} ${b2.x},${b2.y}`} fill={a.color} />
+                      {[0, 1, 2].map((p) => (
+                        <circle key={p} r="2.5" fill="white" opacity="0.9">
+                          <animate 
+                            attributeName="cx" 
+                            values={`${a.x1};${a.x2-ux*hl}`} 
+                            dur="2s" 
+                            repeatCount="indefinite" 
+                            begin={`${p * 0.66}s`} 
+                          />
+                          <animate 
+                            attributeName="cy" 
+                            values={`${a.y1};${a.y2-uy*hl}`} 
+                            dur="2s" 
+                            repeatCount="indefinite" 
+                            begin={`${p * 0.66}s`} 
+                          />
+                          <animate 
+                            attributeName="opacity" 
+                            values="0;1;0" 
+                            dur="2s" 
+                            repeatCount="indefinite" 
+                            begin={`${p * 0.66}s`} 
+                          />
+                        </circle>
+                      ))}
                     </g>
                   );
                 })}
@@ -255,19 +280,19 @@ export default function StadiumPage() {
               <line x1="0" y1="-12" x2="0" y2="0" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" />
             </g>
           </svg>
+          </Panel>
         </motion.div>
 
         {/* Right sidebar */}
         <div className="xl:col-span-4 space-y-5">
 
           {/* Zone list */}
-          <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-6 backdrop-blur-sm">
+          <Panel title="Zone Status">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="font-bold text-base tracking-tight">Zone Status</h3>
               <Eye className="w-4 h-4 text-white/20" />
             </div>
             <div className="space-y-2.5">
-              {mapped.filter(z => z.key !== "z5").map(zone => {
+              {mapped.filter(z => z.key !== "pitch").map(zone => {
                 const pos = ZONES[zone.key];
                 const sel = selected === zone.key;
                 return (
@@ -292,13 +317,13 @@ export default function StadiumPage() {
                 );
               })}
             </div>
-          </div>
+          </Panel>
 
           {/* Selected zone detail */}
           <AnimatePresence mode="wait">
             {selectedZone && (
               <motion.div key={selectedZone.key} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                className="bg-white/[0.02] border rounded-3xl p-6 backdrop-blur-sm"
+                className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"
                 style={{ borderColor: statusHex(selectedZone.status) + "40" }}>
                 <div className="flex items-center justify-between mb-5">
                   <div>
@@ -336,8 +361,7 @@ export default function StadiumPage() {
           </AnimatePresence>
 
           {/* Gate Status */}
-          <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-6 backdrop-blur-sm">
-            <h3 className="font-bold text-base tracking-tight mb-4">Gate Status</h3>
+          <Panel title="Gate Status">
             <div className="grid grid-cols-2 gap-3">
               {GATES.map(g => (
                 <div key={g.label} className="p-3 bg-white/[0.02] rounded-2xl border border-white/5 flex items-center justify-between">
@@ -351,14 +375,10 @@ export default function StadiumPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </Panel>
 
           {/* Camera feeds grid */}
-          <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-6 backdrop-blur-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-base tracking-tight">Camera Feeds</h3>
-              <span className="text-[10px] text-white/20 font-black uppercase tracking-widest">{CAMERAS.length} Active</span>
-            </div>
+          <Panel title="Camera Feeds" right={<span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">{CAMERAS.length} active</span>}>
             <div className="grid grid-cols-4 gap-2">
               {CAMERAS.map(cam => (
                 <div key={cam.id}
@@ -373,9 +393,9 @@ export default function StadiumPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </Panel>
         </div>
       </div>
-    </div>
+    </CommandPage>
   );
 }

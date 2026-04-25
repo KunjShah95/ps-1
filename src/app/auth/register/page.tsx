@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ArrowRight, Mail, User, Building2, Loader2, CheckCircle2, Shield, Eye, EyeOff } from "lucide-react";
 import { Icon } from "@iconify/react";
 import { auth } from "@/lib/firebase";
@@ -25,12 +25,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const router = useRouter();
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,8 +40,9 @@ export default function RegisterPage() {
       await updateProfile(result.user, { displayName: name });
       setSuccess(true);
       setTimeout(() => router.push("/dashboard"), 1500);
-    } catch (err: any) {
-      setError(err.message || "Failed to create account.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to create account.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -59,14 +55,13 @@ export default function RegisterPage() {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
       router.push("/dashboard");
-    } catch (err: any) {
-      setError(err.message || "Google sign-in failed.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Google sign-in failed.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
-
-  if (!mounted) return null;
 
   if (success) {
     return (

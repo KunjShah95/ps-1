@@ -9,32 +9,9 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  query,
-  where,
-  orderBy,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { authManager } from '@/lib/auth/manager';
-
-async function requireAuth(
-  request: NextRequest,
-  minRole: 'viewer' | 'staff' | 'security' | 'manager' | 'admin' = 'staff',
-) {
-  const header = request.headers.get('authorization');
-  if (!header) return null;
-  const token = header.replace(/^Bearer\s+/i, '');
-  const session = await authManager.verifyToken(token);
-  if (!session || !authManager.hasPermission(session.role, [minRole])) return null;
-  return session;
-}
+import { FieldValue } from 'firebase-admin/firestore';
+import { getAdminDb } from '@/lib/firebase-admin';
+import { requireFirebaseUser } from '@/lib/server/requireFirebaseUser';
 
 // ── Seed demo vendors if collection empty ─────────────────────────────────────
 
@@ -52,13 +29,14 @@ let vendorsSeeded = false;
 async function seedVendors() {
   if (vendorsSeeded) return;
   vendorsSeeded = true;
-  const snap = await getDocs(collection(db, 'vendors'));
+  const adminDb = getAdminDb();
+  const snap = await adminDb.collection('vendors').limit(1).get();
   if (!snap.empty) return;
   for (const v of DEMO_VENDORS) {
-    await addDoc(collection(db, 'vendors'), {
+    await adminDb.collection('vendors').add({
       ...v,
       createdAt: Date.now(),
-      created_at: serverTimestamp(),
+      created_at: FieldValue.serverTimestamp(),
     });
   }
 }
@@ -67,8 +45,8 @@ async function seedVendors() {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireAuth(request, 'staff');
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'viewer');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -78,11 +56,12 @@ export async function GET(request: NextRequest) {
     const type   = searchParams.get('type');
     const status = searchParams.get('status');
 
-    let q = query(collection(db, 'vendors'), orderBy('name'));
-    if (type)   q = query(q, where('type', '==', type));
-    if (status) q = query(q, where('status', '==', status));
+    const adminDb = getAdminDb();
+    let q: FirebaseFirestore.Query = adminDb.collection('vendors').orderBy('name');
+    if (type) q = q.where('type', '==', type);
+    if (status) q = q.where('status', '==', status);
 
-    const snap = await getDocs(q);
+    const snap = await q.get();
     const vendors = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     return NextResponse.json({
@@ -105,14 +84,15 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     if (action === 'create') {
-      const session = await requireAuth(request, 'manager');
-      if (!session) {
+      const user = await requireFirebaseUser(request, 'manager');
+      if (!user) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
       }
 
       await seedVendors();
 
-      const ref = await addDoc(collection(db, 'vendors'), {
+      const adminDb = getAdminDb();
+      const ref = await adminDb.collection('vendors').add({
         name:      body.name,
         type:      body.type || 'general',
         contact:   body.contact || '',
@@ -121,41 +101,44 @@ export async function POST(request: NextRequest) {
         status:    'active',
         zones:     body.zones || [],
         rating:    body.rating || 0,
-        createdBy: session.userId,
+        createdBy: user.uid,
         createdAt: Date.now(),
-        created_at: serverTimestamp(),
+        created_at: FieldValue.serverTimestamp(),
       });
 
       return NextResponse.json({ success: true, id: ref.id });
     }
 
     if (action === 'update') {
-      const session = await requireAuth(request, 'manager');
-      if (!session) {
+      const user = await requireFirebaseUser(request, 'manager');
+      if (!user) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
       }
 
       const { id, updates } = body;
-      const ref = doc(db, 'vendors', id);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
+      const adminDb = getAdminDb();
+      const ref = adminDb.collection('vendors').doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) {
         return NextResponse.json({ success: false, error: 'Vendor not found' }, { status: 404 });
       }
 
-      await updateDoc(ref, { ...updates, updated_at: serverTimestamp() });
+      await ref.set({ ...updates, updatedBy: user.uid, updated_at: FieldValue.serverTimestamp() }, { merge: true });
       return NextResponse.json({ success: true });
     }
 
     if (action === 'deactivate') {
-      const session = await requireAuth(request, 'manager');
-      if (!session) {
+      const user = await requireFirebaseUser(request, 'manager');
+      if (!user) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
       }
 
-      await updateDoc(doc(db, 'vendors', body.id), {
+      const adminDb = getAdminDb();
+      await adminDb.collection('vendors').doc(body.id).set({
         status: 'inactive',
-        updated_at: serverTimestamp(),
-      });
+        updatedBy: user.uid,
+        updated_at: FieldValue.serverTimestamp(),
+      }, { merge: true });
       return NextResponse.json({ success: true });
     }
 

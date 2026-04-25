@@ -26,7 +26,7 @@ const VERTICALS = [
     icon: <Trophy className="w-6 h-6" />,
     iconMdi: "mdi:trophy-outline",
     name: "Sports Venues",
-    tagline: "Know what's happening",
+    tagline: "Know what\u2019s happening",
     desc: "Keep fans safe with real-time crowd tracking. Reduce wait times at gates, manage concession lines, and get people out faster after events.",
     color: "from-blue-600/15 to-blue-600/5 border-blue-600/20",
     iconBg: "bg-blue-600/20 text-blue-400",

@@ -9,35 +9,16 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import {
-  collection,
-  doc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  writeBatch,
-  query,
-  where,
-  orderBy,
-  limit,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { authManager } from '@/lib/auth/manager';
-
-async function requireAuth(request: NextRequest) {
-  const header = request.headers.get('authorization');
-  if (!header) return null;
-  const token = header.replace(/^Bearer\s+/i, '');
-  return authManager.verifyToken(token);
-}
+import { FieldValue } from 'firebase-admin/firestore';
+import { getAdminDb } from '@/lib/firebase-admin';
+import { requireFirebaseUser } from '@/lib/server/requireFirebaseUser';
 
 // ── GET ──────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireAuth(request);
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'viewer');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -45,20 +26,17 @@ export async function GET(request: NextRequest) {
     const unreadOnly = searchParams.get('unread') === 'true';
     const pageSize   = Math.min(Number(searchParams.get('limit') || 30), 100);
 
-    let q = query(
-      collection(db, 'notifications'),
-      where('userId', 'in', [session.userId, 'broadcast']),
-      orderBy('created_at', 'desc'),
-      limit(pageSize),
-    );
+    const adminDb = getAdminDb();
+    let q: FirebaseFirestore.Query = adminDb
+      .collection('notifications')
+      .where('userId', 'in', [user.uid, 'broadcast'])
+      .orderBy('created_at', 'desc')
+      .limit(pageSize);
+    if (unreadOnly) q = q.where('read', '==', false);
 
-    if (unreadOnly) {
-      q = query(q, where('read', '==', false));
-    }
-
-    const snap = await getDocs(q);
+    const snap = await q.get();
     const notifications = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const unreadCount   = notifications.filter((n: any) => !n.read).length;
+    const unreadCount = notifications.filter((n) => !(n as { read?: boolean }).read).length;
 
     return NextResponse.json({
       success: true,
@@ -76,53 +54,54 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await requireAuth(request);
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'viewer');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await request.json();
     const { action } = body;
 
+    const adminDb = getAdminDb();
+
     if (action === 'mark-read') {
       const ids: string[] = Array.isArray(body.ids) ? body.ids : [body.id];
-      const batch = writeBatch(db);
-      ids.forEach((id) => batch.update(doc(db, 'notifications', id), { read: true }));
+      const batch = adminDb.batch();
+      ids.forEach((id) => batch.set(adminDb.collection('notifications').doc(id), { read: true }, { merge: true }));
       await batch.commit();
       return NextResponse.json({ success: true, updated: ids.length });
     }
 
     if (action === 'mark-all-read') {
-      const q = query(
-        collection(db, 'notifications'),
-        where('userId', 'in', [session.userId, 'broadcast']),
-        where('read', '==', false),
-      );
-      const snap = await getDocs(q);
-      const batch = writeBatch(db);
-      snap.docs.forEach((d) => batch.update(d.ref, { read: true }));
+      const snap = await adminDb
+        .collection('notifications')
+        .where('userId', 'in', [user.uid, 'broadcast'])
+        .where('read', '==', false)
+        .get();
+      const batch = adminDb.batch();
+      snap.docs.forEach((d) => batch.set(d.ref, { read: true }, { merge: true }));
       await batch.commit();
       return NextResponse.json({ success: true, updated: snap.size });
     }
 
     if (action === 'create') {
       // Admin/manager can broadcast; others can only notify self
-      const targetUserId = body.userId || session.userId;
+      const targetUserId = body.userId || user.uid;
       if (
-        targetUserId !== session.userId &&
-        !authManager.hasPermission(session.role, ['manager'])
+        targetUserId !== user.uid &&
+        !['manager', 'admin'].includes(user.role)
       ) {
         return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
       }
 
-      const ref = await addDoc(collection(db, 'notifications'), {
+      const ref = await adminDb.collection('notifications').add({
         userId:     targetUserId,
         title:      body.title,
         message:    body.message,
         type:       body.type || 'info',   // info | warning | success | error
         read:       false,
-        createdBy:  session.userId,
-        created_at: serverTimestamp(),
+        createdBy:  user.uid,
+        created_at: FieldValue.serverTimestamp(),
       });
 
       return NextResponse.json({ success: true, id: ref.id });

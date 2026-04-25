@@ -9,40 +9,18 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import {
-  collection,
-  doc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  orderBy,
-  limit,
-  serverTimestamp,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { authManager } from '@/lib/auth/manager';
+import { FieldValue } from 'firebase-admin/firestore';
+import { getAdminDb } from '@/lib/firebase-admin';
+import { requireFirebaseUser } from '@/lib/server/requireFirebaseUser';
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-
-async function requireAuth(request: NextRequest, minRole: 'viewer' | 'staff' | 'security' | 'manager' | 'admin' = 'viewer') {
-  const header = request.headers.get('authorization');
-  if (!header) return null;
-  const token = header.replace(/^Bearer\s+/i, '');
-  const session = await authManager.verifyToken(token);
-  if (!session) return null;
-  if (!authManager.hasPermission(session.role, [minRole])) return null;
-  return session;
-}
 
 // ── GET ──────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireAuth(request, 'viewer');
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'viewer');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -52,17 +30,16 @@ export async function GET(request: NextRequest) {
     const unackOnly = searchParams.get('unacknowledged') === 'true';
     const pageSize  = Math.min(Number(searchParams.get('limit') || 50), 200);
 
-    let q = query(
-      collection(db, 'alerts'),
-      orderBy('created_at', 'desc'),
-      limit(pageSize),
-    );
+    const adminDb = getAdminDb();
+    let q: FirebaseFirestore.Query = adminDb
+      .collection('alerts')
+      .orderBy('created_at', 'desc')
+      .limit(pageSize);
+    if (zone) q = q.where('zone', '==', zone);
+    if (severity) q = q.where('severity', '==', severity);
+    if (unackOnly) q = q.where('acknowledged', '==', false);
 
-    if (zone) q = query(q, where('zone', '==', zone));
-    if (severity) q = query(q, where('severity', '==', severity));
-    if (unackOnly) q = query(q, where('acknowledged', '==', false));
-
-    const snap = await getDocs(q);
+    const snap = await q.get();
     const alerts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     return NextResponse.json({
@@ -81,24 +58,30 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await requireAuth(request, 'security');
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'staff');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await request.json();
     const { action } = body;
 
+    const adminDb = getAdminDb();
+
     if (action === 'acknowledge') {
       // Acknowledge one or many alerts
       const ids: string[] = Array.isArray(body.ids) ? body.ids : [body.id];
       await Promise.all(
         ids.map((id) =>
-          updateDoc(doc(db, 'alerts', id), {
-            acknowledged: true,
-            acknowledgedBy: session.userId,
-            acknowledgedAt: serverTimestamp(),
-          }),
+          adminDb.collection('alerts').doc(id).set(
+            {
+              acknowledged: true,
+              acknowledgedBy: user.uid,
+              acknowledgedAt: FieldValue.serverTimestamp(),
+              updated_at: FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          ),
         ),
       );
       return NextResponse.json({ success: true, acknowledged: ids.length });
@@ -106,18 +89,14 @@ export async function POST(request: NextRequest) {
 
     if (action === 'create') {
       // Manual alert creation (security / admin only)
-      if (!authManager.hasPermission(session.role, ['security'])) {
-        return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
-      }
-
-      const ref = await addDoc(collection(db, 'alerts'), {
+      const ref = await adminDb.collection('alerts').add({
         type: body.type || 'manual',
         zone: body.zone || 'system',
         message: body.message,
         severity: body.severity || 'medium',
         acknowledged: false,
-        createdBy: session.userId,
-        created_at: serverTimestamp(),
+        createdBy: user.uid,
+        created_at: FieldValue.serverTimestamp(),
       });
 
       return NextResponse.json({ success: true, id: ref.id });
@@ -134,8 +113,8 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await requireAuth(request, 'admin');
-    if (!session) {
+    const user = await requireFirebaseUser(request, 'admin');
+    if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -143,7 +122,8 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ success: false, error: 'Missing id' }, { status: 400 });
 
-    await deleteDoc(doc(db, 'alerts', id));
+    const adminDb = getAdminDb();
+    await adminDb.collection('alerts').doc(id).delete();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[/api/alerts DELETE]', error);

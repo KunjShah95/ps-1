@@ -9,10 +9,15 @@ import {
   serverTimestamp,
   getDocs,
   query,
-  where
+  orderBy,
+  limit as fsLimit,
+  deleteDoc
 } from "firebase/firestore";
 import { generateZoneData } from "./data-engine";
 import { generateAlerts } from "./ai-engine";
+
+const HISTORY_KEEP_COUNT = 30;
+const HISTORY_FETCH_COUNT = 80;
 
 export async function startSimulation() {
   console.log("Starting simulation data flow...");
@@ -50,6 +55,20 @@ export async function startSimulation() {
           percentage: zone.percentage,
           timestamp: serverTimestamp()
         });
+
+        // Prune old history to prevent unbounded growth
+        try {
+          const historyRef = collection(db, 'zones', zone.id, 'history');
+          const histSnap = await getDocs(
+            query(historyRef, orderBy('timestamp', 'desc'), fsLimit(HISTORY_FETCH_COUNT)),
+          );
+          if (histSnap.size > HISTORY_KEEP_COUNT) {
+            const toDelete = histSnap.docs.slice(HISTORY_KEEP_COUNT);
+            await Promise.all(toDelete.map((d) => deleteDoc(d.ref)));
+          }
+        } catch {
+          // If pruning fails (permissions/indexing), ignore for MVP runtime continuity
+        }
       }
 
       // Generate alerts
