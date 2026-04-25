@@ -34,6 +34,10 @@ firebase-debug.log
 # graphify
 graphify-out/
 
+# secrets
+vortex-arena-ai-92843-2a4d40dcdef1.json
+*-adminsdk-*.json
+
 # env files (can opt-in for committing if needed)
 .env*
 
