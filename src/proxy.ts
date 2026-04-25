@@ -14,7 +14,7 @@ const PUBLIC_API_PREFIXES = [
   '/api/docs',
 ];
 
-export function proxy(request: NextRequest) {
+export default function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
   // Non-API paths → pass through (handled by Next.js routing)
