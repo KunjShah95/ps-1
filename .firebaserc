@@ -1,5 +1,7 @@
 {
-  "projects": {},
+  "projects": {
+    "default": "vortex-arena-ai-92843"
+  },
   "targets": {},
   "etags": {}
 }

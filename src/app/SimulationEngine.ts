@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   collection, 
   onSnapshot, 
@@ -11,6 +11,14 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { startSimulation } from '@/lib/simulation-service';
+
+const MOCK_ZONES: ZoneData[] = [
+  { id: 'gate-a', name: 'Gate A (Main)', count: 1250, capacity: 5000, percentage: 25, waitTime: 3, status: 'low' },
+  { id: 'gate-b', name: 'Gate B (North)', count: 2100, capacity: 3000, percentage: 70, waitTime: 8, status: 'high' },
+  { id: 'food-court', name: 'Food Court Central', count: 1600, capacity: 2000, percentage: 80, waitTime: 12, status: 'critical' },
+  { id: 'south-stand', name: 'South Stand', count: 4200, capacity: 15000, percentage: 28, waitTime: 2, status: 'low' },
+  { id: 'north-stand', name: 'North Stand', count: 9800, capacity: 12000, percentage: 82, waitTime: 15, status: 'critical' },
+];
 
 export interface ZoneData {
   id: string;
@@ -46,11 +54,13 @@ export interface Insights {
 }
 
 export function useSimulation() {
-  const [zones, setZones] = useState<ZoneData[]>([]);
+  const [zones, setZones] = useState<ZoneData[]>(MOCK_ZONES);
   const [recommendation, setRecommendation] = useState<string>("Analyzing crowd patterns...");
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [insights, setInsights] = useState<Insights | null>(null);
   const [isLive, setIsLive] = useState(true);
+  const mockDataRef = useRef(MOCK_ZONES.map(z => ({ ...z })));
+  const hasFirebaseData = useRef(false);
   
   const getZoneHistory = useCallback(async (zoneId: string, limitCount: number = 10) => {
     const historyQuery = query(
@@ -76,19 +86,26 @@ export function useSimulation() {
   }, []);
 
   useEffect(() => {
-    // Start simulation automatically if live
     let stopSim: (() => void) | undefined;
     if (isLive) {
-      startSimulation().then(stop => {
-        stopSim = stop;
-      });
+      startSimulation()
+        .then(stop => {
+          stopSim = stop;
+          console.log("Simulation started - data will update in Firebase every 1 minute");
+        })
+        .catch(err => console.error("Failed to start simulation:", err));
     }
 
     const unsubscribeZones = onSnapshot(collection(db, 'zones'), (snapshot) => {
+      console.log("Firebase zones snapshot received, docs:", snapshot.size);
+      
       if (snapshot.empty) {
-        setZones([]);
+        console.log("No zones in Firebase yet - using mock data");
+        hasFirebaseData.current = false;
         return;
       }
+
+      hasFirebaseData.current = true;
 
       const zonesData = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -112,6 +129,8 @@ export function useSimulation() {
           status
         } as ZoneData;
       });
+      
+      console.log("Updated zones from Firebase:", zonesData.map(z => `${z.id}: ${z.count}`).join(", "));
       setZones(zonesData);
 
       if (zonesData.length > 0) {
@@ -162,6 +181,45 @@ export function useSimulation() {
       if (stopSim) stopSim();
     };
   }, [isLive]);
+
+  useEffect(() => {
+    const updateMockData = () => {
+      if (hasFirebaseData.current) {
+        console.log("Firebase has data - skipping mock update");
+        return;
+      }
+      
+      const updated = mockDataRef.current.map(zone => {
+        const change = Math.floor((Math.random() - 0.5) * 200);
+        let newCount = Math.max(0, Math.min(zone.capacity, zone.count + change));
+        const newPercentage = Math.round((newCount / zone.capacity) * 100);
+        let newStatus: ZoneData['status'] = 'low';
+        if (newPercentage > 85) newStatus = 'critical';
+        else if (newPercentage > 60) newStatus = 'high';
+        else if (newPercentage > 30) newStatus = 'medium';
+        
+        return { ...zone, count: newCount, percentage: newPercentage, status: newStatus, waitTime: Math.floor(newCount / 10) };
+      });
+      
+      mockDataRef.current = updated;
+      setZones(updated);
+      
+      const sorted = [...updated].sort((a, b) => a.percentage - b.percentage);
+      setRecommendation(`Suggested route: Use ${sorted[0].name} for optimal flow.`);
+      
+      const totalPeople = updated.reduce((acc, z) => acc + z.count, 0);
+      const avgWait = updated.length ? updated.reduce((acc, z) => acc + z.waitTime, 0) / updated.length : 0;
+      setInsights({
+        totalPeople,
+        averageWaitTime: Math.round(avgWait),
+        criticalZones: updated.filter(z => z.status === 'critical').length,
+        throughputRate: Math.round(totalPeople / 60)
+      });
+    };
+
+    const interval = setInterval(updateMockData, 60000);
+    return () => clearInterval(interval);
+  }, []);
   
   return { zones, recommendation, alerts, insights, isLive, setIsLive, getZoneHistory, acknowledgeAlert };
 }

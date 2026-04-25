@@ -19,10 +19,17 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Icon } from "@iconify/react";
 
 export default function DashboardPage() {
-  const { zones, recommendation, alerts, insights, acknowledgeAlert } = useSimulation();
+  const { zones, recommendation, alerts, insights, acknowledgeAlert, isLive } = useSimulation();
   const { user, logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+
+  useEffect(() => {
+    if (zones.length > 0) {
+      setLastUpdate(new Date());
+    }
+  }, [zones]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -30,7 +37,10 @@ export default function DashboardPage() {
   }, []);
 
   const filteredZones = useMemo(() => 
-    zones.filter(z => z.name.toLowerCase().includes(searchQuery.toLowerCase())),
+    zones.filter(z => 
+      z.id.startsWith('gate') && 
+      z.name.toLowerCase().includes(searchQuery.toLowerCase())
+    ),
     [zones, searchQuery]
   );
 
@@ -159,8 +169,16 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
           <div className="xl:col-span-8">
-            <Panel title="Zone Grid">
-              <motion.div layout className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Panel 
+  title="Zone Grid"
+  right={
+    <span className="inline-flex items-center gap-2 text-[10px] font-medium text-white/40">
+      <span className={`h-1.5 w-1.5 rounded-full ${isLive ? 'bg-emerald-400 animate-pulse' : 'bg-white/20'}`} />
+      Live · 1 min
+    </span>
+  }
+>
+              <motion.div layout className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <AnimatePresence mode="popLayout">
                   {filteredZones.map((zone, idx) => (
                     <ZoneCard key={zone.id} zone={zone} index={idx} />
@@ -228,7 +246,10 @@ export default function DashboardPage() {
             {zones.length > 0 ? (
               <Panel title="Gate Movements (Trends)">
                 <div className="space-y-6">
-                  {zones.slice(0, 4).map((zone) => (
+                  {zones
+                    .filter(z => z.id.startsWith('gate'))
+                    .slice(0, 4)
+                    .map((zone) => (
                     <TrendChart
                       key={zone.id}
                       zoneId={zone.id}
@@ -272,23 +293,22 @@ function ZoneCard({ zone, index }: { zone: SimZoneData; index: number }) {
         </span>
       </div>
 
-      <div className="mt-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[9px] font-bold uppercase tracking-widest text-white/50">Occupancy</p>
-            <p className="mt-0.5 text-xl font-semibold tracking-tight text-white tabular-nums">
-              {zone.count} 
-              <span className="ml-1 text-xs font-medium text-white/35">/ {zone.capacity}</span>
-            </p>
-          </div>
-          <div className="text-right">
-             <p className="text-[9px] font-bold uppercase tracking-widest text-white/50">Saturation</p>
-             <p className="mt-0.5 text-xl font-semibold tracking-tight text-white tabular-nums">
-              {zone.percentage}
-              <span className="ml-1 text-xs font-medium text-white/35">%</span>
-             </p>
+      <div className="mt-4 mb-4 grid grid-cols-2 gap-4">
+        <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5">
+          <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-white/40">Occupancy</p>
+          <div className="mt-1 flex items-baseline gap-1.5 flex-wrap">
+            <span className="text-xl font-bold text-white tabular-nums">{zone.count}</span>
+            <span className="text-[11px] font-medium text-white/30">/ {zone.capacity}</span>
           </div>
         </div>
+        <div className="bg-white/[0.02] rounded-xl p-3 border border-white/5">
+          <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-white/40">Saturation</p>
+          <div className="mt-1 flex items-baseline gap-1">
+            <span className="text-xl font-bold text-white tabular-nums">{zone.percentage}</span>
+            <span className="text-xs font-medium text-white/30">%</span>
+          </div>
+        </div>
+      </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.22em] text-white/45">
@@ -314,7 +334,6 @@ function ZoneCard({ zone, index }: { zone: SimZoneData; index: number }) {
             />
           </div>
         </div>
-      </div>
     </motion.div>
   );
 }

@@ -1,4 +1,21 @@
 {
+  "hosting": {
+    "source": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "vortex-arena-ai",
+          "region": "us-central1"
+        }
+      }
+    ]
+  },
   "firestore": {
     "database": "(default)",
     "location": "us-central1",

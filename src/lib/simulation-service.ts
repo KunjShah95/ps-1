@@ -22,12 +22,14 @@ const HISTORY_FETCH_COUNT = 80;
 export async function startSimulation() {
   console.log("Starting simulation data flow...");
   
-  // 1. Ensure zones exist in DB
+  // 1. Ensure all zones exist in DB
   const zonesSnap = await getDocs(collection(db, 'zones'));
-  if (zonesSnap.empty) {
-    console.log("Initializing zones in Firestore...");
-    const initialData = generateZoneData();
-    for (const zone of initialData) {
+  const existingZoneIds = new Set(zonesSnap.docs.map(doc => doc.id));
+  
+  const initialData = generateZoneData();
+  for (const zone of initialData) {
+    if (!existingZoneIds.has(zone.id)) {
+      console.log(`Initializing missing zone: ${zone.id}`);
       await setDoc(doc(db, 'zones', zone.id), {
         ...zone,
         updatedAt: serverTimestamp()
@@ -83,7 +85,7 @@ export async function startSimulation() {
     } catch (error) {
       console.error("Simulation update failed:", error);
     }
-  }, 10000); // Every 10 seconds
+  }, 60000); // Every 1 minute
 
   return () => clearInterval(interval);
 }
