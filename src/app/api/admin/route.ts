@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * Admin Dashboard API — aggregate data for the admin overview screen
  * GET /api/admin

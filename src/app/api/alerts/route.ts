@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * GET  /api/alerts           — list alerts (with filters)
  * POST /api/alerts           — acknowledge / create alert
@@ -130,3 +131,4 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Failed to delete alert' }, { status: 500 });
   }
 }
+

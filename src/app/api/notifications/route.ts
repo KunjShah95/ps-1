@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * Notifications API
  * GET  /api/notifications            — list notifications for current user
@@ -113,3 +114,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Notification action failed' }, { status: 500 });
   }
 }
+

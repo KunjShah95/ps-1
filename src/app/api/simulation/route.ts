@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * Simulation Control API
  * POST /api/simulation
@@ -126,3 +127,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Simulation action failed' }, { status: 500 });
   }
 }
+

@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * Staff Management API
  * GET  /api/staff            — list staff members
@@ -168,3 +169,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Staff action failed' }, { status: 500 });
   }
 }
+

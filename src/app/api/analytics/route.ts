@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * GET  /api/analytics  — aggregate crowd analytics from Firestore history
  * Query params:
@@ -133,3 +134,4 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Analytics request failed' }, { status: 500 });
   }
 }
+

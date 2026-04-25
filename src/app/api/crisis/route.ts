@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * Crisis Management API
  * GET  /api/crisis              — list active crisis incidents
@@ -179,3 +180,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Crisis action failed' }, { status: 500 });
   }
 }
+

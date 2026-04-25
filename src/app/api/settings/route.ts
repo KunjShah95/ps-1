@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * Settings API
  * GET  /api/settings          — get current settings for venue or user
@@ -108,3 +109,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Settings update failed' }, { status: 500 });
   }
 }
+

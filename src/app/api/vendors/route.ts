@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * Vendor Management API
  * GET  /api/vendors           — list vendors
@@ -148,3 +149,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Vendor action failed' }, { status: 500 });
   }
 }
+
