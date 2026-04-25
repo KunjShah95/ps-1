@@ -45,7 +45,7 @@ export function hasAtLeastRole(actual: AppRole, required: AppRole): boolean {
 function getBearerToken(request: NextRequest): string | null {
   const header = request.headers.get("authorization");
   if (!header) return null;
-  const token = header.replace(/^Bearer\\s+/i, "").trim();
+  const token = header.replace(/^Bearer\s+/i, "").trim();
   return token ? token : null;
 }
 

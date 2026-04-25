@@ -65,7 +65,7 @@ export default function SettingsPage() {
       try {
         const res = await apiFetch<{ settings: unknown }>("/api/settings?scope=user");
         if (!alive) return;
-        const s = (res.settings && typeof res.settings === "object") ? (res.settings as Record<string, unknown>) : {};
+        const s = (res?.settings && typeof res.settings === "object") ? (res.settings as Record<string, unknown>) : {};
         setToggles((prev) => ({
           ...prev,
           criticalAlerts: typeof s.criticalAlerts === "boolean" ? s.criticalAlerts : prev.criticalAlerts,

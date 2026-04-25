@@ -1,6 +1,5 @@
-Dockerfile
-.dockerignore
 .git
+.gitignore
 .gitignore
 node_modules
 .next
